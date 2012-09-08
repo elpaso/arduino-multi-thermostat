@@ -34,10 +34,10 @@
 #define HYSTERESIS 0.5
 
 // Room status
-#define OPENING 'V'
-#define CLOSED 'C'
-#define OPEN 'O'
-#define BLOCKED 'B'
+#define OPENING 'V' // valves are opening for VALVE_OPENING_TIME
+#define CLOSED 'C' // Closed
+#define OPEN 'O' // Open (main pump is also open)
+#define BLOCKED 'B' // Blocked until BLOCKED_TIME is elapsed
 
 
 #include "Timer.h"
