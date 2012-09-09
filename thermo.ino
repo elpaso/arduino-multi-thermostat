@@ -32,6 +32,7 @@
 #define RISE_TEMP_DELTA 0.5
 #define IDLE_TIME 10000
 #define HYSTERESIS 0.5
+#define LCD_USR_SCREEN_ROTATE_TIME 4000
 
 // Room status
 #define OPENING 'V' // valves are opening for VALVE_OPENING_TIME
@@ -155,6 +156,7 @@ byte this_weekday;
 // Global OFF
 byte off = 0;
 byte pump_open = 0;
+byte info_room = 0;
 
 // Temperatures
 // TODO: configurable
@@ -204,8 +206,8 @@ struct room_t {
   float old_temperature;
   unsigned long last_status_change;
 } rooms[ROOMS] = {
-    {1, { 0x28, 0xAD, 0x4C, 0xC4, 0x03, 0x00, 0x00, 0x13},  10, 3},
-    {2, { 0x28, 0x6C, 0x41, 0xC4, 0x03, 0x00, 0x00, 0x57}, 11, 8, 2}
+    {1, { 0x28, 0xAD, 0x4C, 0xC4, 0x03, 0x00, 0x00, 0x13}, 10, 3},
+    {2, { 0x28, 0x6C, 0x41, 0xC4, 0x03, 0x00, 0x00, 0x57}, 11, 8}
 };
 
 
@@ -236,7 +238,14 @@ void read_temperatures(){
   }
 }
 
-
+float get_desired_temperature(byte room){
+    // Get slot
+    byte _slot = 0;
+    while(_slot <= 6 && this_time > slot[_slot]){
+        _slot++;
+    }
+    return T[daily_program[weekly_program[rooms[room].program][this_weekday]][_slot]];    
+}
 
 /**
  * Returns true if the room needs heat
@@ -244,14 +253,8 @@ void read_temperatures(){
 bool needs_heating(byte room){
     if(rooms[room].status == OPENING){
         return TRUE;
-    }
-    // Get slot
-    byte _slot = 0;
-    while(_slot <= 6 && this_time > slot[_slot]){
-        _slot++;
-    }
-    byte wkly = weekly_program[rooms[room].program][this_weekday];
-    float t = T[daily_program[wkly][_slot]];
+    }    
+    float t = get_desired_temperature(room);
 #if DEBUG
     Serial.print("heating: slot for room ");
     Serial.print(room);
@@ -281,6 +284,16 @@ void change_status(byte room, byte status){
 }
 
 /**
+ * Rotate room number for usr screen info
+ */ 
+void info_room_rotate(){
+    info_room++;
+    if(info_room > ROOMS){
+        info_room = 0;
+    }
+}
+
+/**
  * Check temperatures and perform actions
  */
 void check_temperatures(){
@@ -288,7 +301,8 @@ void check_temperatures(){
 
     now = RTC.now();
     this_time = now.hour() * 60 + now.minute();
-    this_weekday = now.dayOfWeek();
+    this_weekday = now.dayOfWeek(); // sunday is 0
+    this_weekday = this_weekday ? this_weekday - 1 : 6;
 #if DEBUG
     Serial.print(now.year(), DEC);
     Serial.print('/');
@@ -347,17 +361,17 @@ void check_temperatures(){
  * Update user screen
  */
 void show_room_status(){
-    char buf[34]; // 16*2 display
-    char buf2[17];
-    strcpy(buf, "\0");
-    for(int i=0; i<ROOMS; i++){
-        sprintf(buf2, "R%d %c %d", i, rooms[i].status, (int)rooms[i].temperature);
-        strcat(buf, buf2);
-        strcat(buf, (i % 2) ? "\n" : " ");
+    char buf[34] = "\0"; // 16*2 display
+    char buf2[10];
+    char buf3[10];
+    //strcpy(buf, "\0");
+    if(info_room == ROOMS){
+        sprintf(buf, "Pump: %s\n%d:%d:%d %d\n", (pump_open ? "OPEN" : "CLOSED"), now.hour(), now.minute(), now.second(), this_weekday);
+    } else {
+        dtostrf(rooms[info_room].temperature, 5, 2, buf2);
+        dtostrf(get_desired_temperature(info_room), 5, 2, buf3);
+        sprintf(buf, "Room %d T:%s\nP:%d t:%s S:%c\n", rooms[info_room].name, buf2, rooms[info_room].program, buf3, rooms[info_room].status);
     }
-    // Time line
-    sprintf(buf2, "%d:%d:%d %d %c\n", now.hour(), now.minute(), now.second(), this_weekday, pump_open ? '*' : 'X');
-    strcat(buf, buf2);
     tree.drawUsrScreen(buf);
 }
 
@@ -409,6 +423,7 @@ void setup(){
   read_config();
 
   t.every(TEMP_READ_INTERVAL, check_temperatures);
+  t.every(LCD_USR_SCREEN_ROTATE_TIME, info_room_rotate);
 
   _menu *r,*s1,*s2;
 
